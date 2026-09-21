@@ -9,6 +9,19 @@
 #   codex exec "prompt"   |   claude -p "prompt"   |   gemini -p "prompt"
 set -uo pipefail
 
+# Help must work even on bash 3.2 (the macOS default), so it is handled before the guard.
+case "${1:-}" in
+  ""|-h|--help) sed -n '2,6p' "$0"; exit 0 ;;
+esac
+
+# The role map below is an associative array: bash 4+ only.
+# macOS ships bash 3.2 — run with Homebrew bash, or install bash from your package manager.
+if (( ${BASH_VERSINFO[0]:-0} < 4 )); then
+  echo "dispatch.sh requires bash 4+ (found ${BASH_VERSION:-unknown}); associative arrays are unsupported." >&2
+  echo "On macOS: brew install bash, then: /opt/homebrew/bin/bash dispatch.sh <args>" >&2
+  exit 1
+fi
+
 # Mesh address book — override AGENTS_DIR to relocate the whole tree.
 AGENTS_DIR="${AGENTS_DIR:-$HOME/agents}"
 LOG="${DISPATCH_LOG:-$AGENTS_DIR/dispatch.log}"
@@ -76,9 +89,6 @@ $(cat "$dir/2-review.md")" | tee "$dir/3-final-review.md"
     log "income brief"
     [ -x "$AGENTS_DIR/income.sh" ] || { echo "income.sh not found under $AGENTS_DIR (unpublished side script)" >&2; exit 3; }
     timeout "$TIMEOUT" "$AGENTS_DIR/income.sh"
-    ;;
-  ""|-h|--help)
-    sed -n '2,6p' "$0"; exit 0
     ;;
   *)
     echo "denied: unknown action '$cmd'" >&2; exit 2
