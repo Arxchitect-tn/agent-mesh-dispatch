@@ -3,17 +3,19 @@
 #
 #   dispatch.sh sentinel                              -> print the latest sentinel report
 #   dispatch.sh agent <codex|research|review|reviewer|claude> <task...> -> one agent, one task, non-interactive
-#   dispatch.sh review <task...>                      -> codex writes, gemini first-reviews, claude final-reviews
+#   dispatch.sh review <task...>                      -> codex writes, opencode first-reviews, opencode final-reviews
 #
 # Non-interactive flags (verified, not assumed):
 #   codex exec "prompt"   |   claude -p "prompt"   |   gemini -p "prompt"
 set -uo pipefail
 
-LOG=/home/admin/agents/dispatch.log
-WORK=/home/admin/agents/workspace
+# Mesh address book — override AGENTS_DIR to relocate the whole tree.
+AGENTS_DIR="${AGENTS_DIR:-$HOME/agents}"
+LOG="${DISPATCH_LOG:-$AGENTS_DIR/dispatch.log}"
+WORK="${DISPATCH_WORK:-$AGENTS_DIR/workspace}"
 TIMEOUT=${DISPATCH_TIMEOUT:-900}
-FINAL_MODEL="${REVIEW_FINAL_MODEL:-opencode-go/kimi-k3}"
-[ -f /home/admin/agents/review.conf ] && . /home/admin/agents/review.conf
+FINAL_MODEL="${REVIEW_FINAL_MODEL:-opencode-go/CHANGE-ME}"
+[ -f "$AGENTS_DIR/review.conf" ] && . "$AGENTS_DIR/review.conf"
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG"; }
 
@@ -43,7 +45,7 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   sentinel)
     log "sentinel read"
-    cat /var/log/sentinel/latest.txt 2>/dev/null || { echo "no sentinel report yet" >&2; exit 1; }
+    cat "${SENTINEL_REPORT:-/var/log/sentinel/latest.txt}" 2>/dev/null || { echo "no sentinel report yet" >&2; exit 1; }
     ;;
   agent)
     who="${1:-}"; shift || true
@@ -72,7 +74,8 @@ $(cat "$dir/2-review.md")" | tee "$dir/3-final-review.md"
     ;;
   income)
     log "income brief"
-    timeout 900 /home/admin/agents/income.sh
+    [ -x "$AGENTS_DIR/income.sh" ] || { echo "income.sh not found under $AGENTS_DIR (unpublished side script)" >&2; exit 3; }
+    timeout "$TIMEOUT" "$AGENTS_DIR/income.sh"
     ;;
   ""|-h|--help)
     sed -n '2,6p' "$0"; exit 0
