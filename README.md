@@ -1,7 +1,8 @@
 # agent-mesh-dispatch
 
-A small routing layer for a multi-agent mesh: one entry point that maps a **role name** to a
-concrete agent CLI, plus a three-stage review pipeline.
+A small routing layer plus a disposable-container runtime kit for a multi-agent mesh: one entry
+point maps a **role name** to a concrete agent CLI behind a three-stage review pipeline, and each
+agent runs in its own isolated container.
 
 ## Components
 
@@ -13,6 +14,17 @@ concrete agent CLI, plus a three-stage review pipeline.
   no Docker socket and no host mounts; the whitelist is root-owned and lives on the target.
 - `review.conf` — stage-by-stage model selection, so the pipeline can be retargeted without
   editing the script.
+- `spin-agent.sh` — spawns one disposable container per agent instance from the shared base
+  image: a shared `/work` volume plus a private per-instance home mount, so every agent gets its
+  own auth, config and profile. Mesh root, image tag and env file are overridable via environment
+  variables at the top of the script.
+- `agent-base.Dockerfile` — the one image behind the N containers: node 22 with git/python/build
+  tools and the codex, claude-code, opencode and gemini CLIs installed, running as the non-root
+  `node` user.
+- `roster.sh` — regenerates `ROSTER.md` from live state instead of a hand-edited document:
+  `docker ps` for what is running, the role → container map parsed out of `dispatch.sh`, and the
+  models read from the configs that actually drive the runs. `roster.sh -` prints to stdout
+  instead of writing.
 
 ## Design notes
 
@@ -30,9 +42,22 @@ Worth stealing if you're building something similar:
   means the command ran. Match the real invocation, not the one you assumed.
 - **Logic lives in versioned scripts, not in the scheduler.** The automation layer stays
   model-free and auditable; scheduling is just a trigger.
+- **One image, N containers.** Build the base image once, then treat every agent instance as a
+  disposable container: `spin-agent.sh` mounts a freshly created home dir over `/home/node`, so
+  auth, config and profiles can never bleed between agents, and killing an agent is
+  `docker rm -f`, not a rebuild.
+- **Split the mounts by trust.** `/work` is shared read-write — every agent works the same
+  project files — while each `/home/node` is private. Shared workspace, isolated identity. The
+  host dirs are chowned to the image's UID rather than mapped per-user at runtime.
+- **Derive the roster from live state.** A hand-maintained `ROSTER.md` is a second source of
+  truth that silently drifts; the roster script parses the real `dispatch.sh` role map so it
+  cannot invent a role dispatch can't serve, and reads the running containers for state.
 
 ## Layout
 
+    agent-base.Dockerfile    base image for the agent containers
     dispatch.sh              role routing + review pipeline
     n8n-forced-command.sh    restricted-key allow-list wrapper
     review.conf              per-stage model configuration
+    roster.sh                regenerate ROSTER.md from live state
+    spin-agent.sh            one disposable container per agent instance
